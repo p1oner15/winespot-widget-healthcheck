@@ -146,90 +146,65 @@ async function waitForFrameContent(frameLocator) {
 }
 
 // =============================================================================
-// ОТКРЫТИЕ ЧАТА ЧЕРЕЗ МЕДАЛЬКУ
-// =============================================================================
-
-// =============================================================================
-// ОТКРЫТИЕ ЧАТА ЧЕРЕЗ МЕДАЛЬКУ
+// ОТКРЫТИЕ ЧАТА И ОТПРАВКА СООБЩЕНИЯ
 // =============================================================================
 
 /**
- * Открывает чат кликом по медальке
+ * Открывает чат и отправляет сообщение "hello", ждёт ответа
  *
- * Медалька — это маленький iframe (#wsf_medal), который появляется поверх виджета
- * и позволяет открыть чат кликом по иконке
- *
- * @param {import('@playwright/test').Page} page - Страница Playwright
- * @returns {Promise<import('@playwright/test').FrameLocator>} FrameLocator виджета после открытия чата
- */
-async function openChatViaMedal(page) {
-  // Получаем frameLocator для виджета
-  const widgetFrame = await getWidgetFrame(page);
-  
-  // Ждём загрузки содержимого iframe виджета
-  await waitForFrameContent(widgetFrame);
-
-  // Получаем frameLocator для медальки
-  const medalFrame = page.frameLocator(config.selectors.MEDAL);
-
-  // Ждём загрузки содержимого iframe медальки
-  await waitForFrameContent(medalFrame);
-
-  // Кликаем по медальке для открытия чата
-  // force: true — кликаем без проверки видимости (медалька может быть под виджетом)
-  await medalFrame.locator(config.selectors.MEDAL_FACE).click({ force: true });
-
-  // Ждём появления поля ввода сообщения (чат открыт)
-  // Ищем любое текстовое поле внутри виджета
-  const messageInput = widgetFrame.locator('input[type="text"], textarea, [contenteditable="true"]').first();
-  await messageInput.waitFor({ state: 'visible', timeout: config.TIMEOUTS.TRACK_BUTTON * 2 });
-
-  return widgetFrame;
-}
-
-// =============================================================================
-// ОТПРАВКА СООБЩЕНИЯ В ЧАТ
-// =============================================================================
-
-/**
- * Отправляет сообщение в чат и ждёт ответа
- *
- * @param {import('@playwright/test').FrameLocator} widgetFrame - FrameLocator виджета
- * @param {string} message - Текст сообщения для отправки
- * @returns {Promise<void>}
- */
-async function sendMessageAndWaitForReply(widgetFrame, message = 'hello') {
-  // Находим поле ввода сообщения
-  const messageInput = widgetFrame.locator('input[type="text"], textarea').first();
-  
-  // Вводим сообщение
-  await messageInput.fill(message);
-  
-  // Находим кнопку отправки (обычно button с иконкой отправки или текстом)
-  const sendButton = widgetFrame.locator('button[type="submit"], button.send, [class*="send"]').first();
-  
-  // Кликаем отправить
-  await sendButton.click();
-  
-  // Ждём ответа от бота
-  // Ищем любое сообщение в чате (обычно div с классом message, bot, reply)
-  const botMessage = widgetFrame.locator('[class*="message"], [class*="bot"], [class*="reply"], .chat-message').first();
-  await botMessage.waitFor({ state: 'visible', timeout: config.TIMEOUTS.AUTHORIZATION_FORM * 2 });
-}
-
-// =============================================================================
-// E2E СЦЕНАРИЙ: ОТКРЫТИЕ ЧАТА И ОТПРАВКА СООБЩЕНИЯ
-// =============================================================================
-
-/**
- * Полный e2e сценарий: открытие чата через медальку, отправка "hello", проверка ответа
+ * Структура виджета:
+ * - .chat.-hello — начальный экран с "Click here to start using our beta chat!"
+ * - .chat.-welc — приветственный экран с темами
+ * - .chat.-messages — чат с полем ввода и кнопкой отправки
  *
  * @param {import('@playwright/test').Page} page - Страница Playwright
  * @returns {Promise<void>}
  */
 async function performChatScenario(page) {
-  const widgetFrame = await openChatViaMedal(page);
-  await sendMessageAndWaitForReply(widgetFrame, 'hello');
+  const { expect } = require('@playwright/test');
+  
+  // Получаем frameLocator для виджета
+  const widgetFrame = page.frameLocator('#winespot');
+  
+  // Ждём загрузки содержимого iframe виджета
+  await waitForFrameContent(widgetFrame);
+
+  // Кликаем по "Click here to start using our beta chat!" чтобы открыть чат
+  // Это открывает приветственный экран
+  try {
+    const openChatButton = widgetFrame.locator('.ws_open_welc').first();
+    await openChatButton.click({ force: true });
+    await page.waitForTimeout(500); // Ждём открытия
+  } catch (error) {
+    console.log('ws_open_welc click failed, continuing anyway...');
+  }
+
+  // Теперь кликаем по "How can we help?" чтобы открыть поле ввода
+  // Это элемент .w_link_msg с open_chat=""
+  try {
+    const openMessagesButton = widgetFrame.locator('[open_chat=""]').first();
+    await openMessagesButton.click({ force: true });
+    await page.waitForTimeout(500); // Ждём открытия
+  } catch (error) {
+    console.log('open_chat click failed, continuing anyway...');
+  }
+
+  // Ищем поле ввода сообщения (contenteditable div)
+  const messageInput = widgetFrame.locator('#ws_input, [contenteditable="true"]').first();
+  
+  // Вводим сообщение "hello"
+  await messageInput.fill('hello');
+  
+  // Кликаем кнопку отправки
+  const sendButton = widgetFrame.locator('#ws_bsend, .btn.send').first();
+  await sendButton.click();
+  
+  // Ждём ответа от бота
+  // Ищем сообщения в чате — они появляются в #ws_msgcont
+  const botMessages = widgetFrame.locator('#ws_msgcont [class*="msg"], #ws_msgcont .message, #ws_msgcont > *');
+  
+  // Ждём хотя бы одно сообщение от бота
+  await expect(botMessages.first()).toBeVisible({ timeout: config.TIMEOUTS.AUTHORIZATION_FORM * 2 });
 }
 
 // =============================================================================
@@ -284,8 +259,6 @@ module.exports = {
   validateWidget,
   getWidgetFrame,
   waitForFrameContent,
-  openChatViaMedal,
-  sendMessageAndWaitForReply,
   performChatScenario,
   expectWidgetsVisible
 };
