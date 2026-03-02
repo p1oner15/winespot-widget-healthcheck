@@ -2,64 +2,182 @@
 import { defineConfig, devices } from '@playwright/test';
 
 // Загружаем конфигурацию из tests/config.js
+// Все константы (таймауты, селекторы, партнёры) вынесены в отдельный файл
 const testConfig = require('./tests/config');
 
 /**
- * Конфигурация Playwright для тестов виджета WineSpot
+ * =============================================================================
+ * КОНФИГУРАЦИЯ PLAYWRIGHT ДЛЯ ТЕСТОВ ВИДЖЕТА WINESPOT
+ * =============================================================================
+ * 
  * @see https://playwright.dev/docs/test-configuration
+ * @see https://playwright.dev/docs/api/class-testconfig
  */
 export default defineConfig({
+  // ==========================================================================
+  // ПАПКА С ТЕСТАМИ
+  // ==========================================================================
+  /**
+   * Директория с тестами относительно этого конфига
+   * Все файлы *.spec.js в этой папке и подпапках будут найдены автоматически
+   */
   testDir: './tests',
+  
+  /**
+   * Файлы которые будут исключены из запуска
+   * debug-*.spec.js — файлы для отладки (не коммитятся в репозиторий)
+   */
   testIgnore: ['**/debug-*.spec.js'],
+  
+  // ==========================================================================
+  // ПАРАЛЛЕЛИЗАЦИЯ
+  // ==========================================================================
+  /**
+   * Запускать тесты в файлах параллельно
+   * true — максимальная параллелизация (быстрее, но больше ресурсов)
+   */
   fullyParallel: true,
-  /* Fail the build on CI if you accidentally left test.only in the source code. */
+  
+  /**
+   * Провалить сборку в CI если случайно оставлен test.only
+   * test.only — запускает только этот тест (удобно для отладки)
+   * В CI это должно вызывать ошибку чтобы не забыть убрать test.only
+   */
   forbidOnly: !!process.env.CI,
-  /* Retry on CI only */
+  
+  /**
+   * Количество повторных попыток при падении теста
+   * В CI — 2 попытки (для борьбы с flaky-тестами)
+   * Локально — 0 попыток (чтобы сразу видеть проблему)
+   */
   retries: process.env.CI ? 2 : 0,
-  /* Opt out of parallel tests on CI. */
+  
+  /**
+   * Количество параллельных воркеров (процессов)
+   * В CI — 1 воркер (стабильность важнее скорости)
+   * Локально — по умолчанию (максимальная скорость)
+   */
   workers: process.env.CI ? 1 : undefined,
-  /* Reporter to use. See https://playwright.dev/docs/test-reporters */
+  
+  // ==========================================================================
+  // ОТЧЁТНОСТЬ
+  // ==========================================================================
+  /**
+   * Тип отчёта о результатах тестов
+   * 'html' — HTML-отчёт (открывается в браузере через npx playwright show-report)
+   * Другие варианты: 'list', 'line', 'dot', 'json', 'junit', 'github'
+   * @see https://playwright.dev/docs/test-reporters
+   */
   reporter: 'html',
-  /* Timeout for each test */
+  
+  // ==========================================================================
+  // ТАЙМАУТЫ
+  // ==========================================================================
+  /**
+   * Общий таймаут для каждого теста
+   * Если тест выполняется дольше — будет прерван
+   * Берётся из config.js (60 сек локально, 120 сек в CI)
+   */
   timeout: testConfig.TEST_TIMEOUT,
-  /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
+  
+  // ==========================================================================
+  // ОБЩИЕ НАСТРОЙКИ ДЛЯ ВСЕХ ПРОЕКТОВ
+  // ==========================================================================
+  /**
+   * Настройки которые применяются ко всем браузерам в projects
+   * @see https://playwright.dev/docs/api/class-testoptions
+   */
   use: {
-    /* Base URL to use in actions like `await page.goto('')`. */
+    /**
+     * Базовый URL для всех действий page.goto()
+     * Все относительные URL будут дополнены этим базовым
+     * Например: page.goto('/page.html') → https://staging.getwinespot.com/page.html
+     */
     baseURL: 'https://staging.getwinespot.com/',
-
-    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
+    
+    /**
+     * Собирать trace при первой попытке повторного запуска
+     * Trace — это детальная запись теста (скриншоты, DOM, сеть)
+     * Просмотр: npx playwright show-trace trace.zip
+     * @see https://playwright.dev/docs/trace-viewer
+     */
     trace: 'on-first-retry',
+    
+    /**
+     * Делать скриншот только при падении теста
+     * Варианты: 'off', 'on', 'only-on-failure'
+     * Скриншоты сохраняются в test-results/
+     */
     screenshot: 'only-on-failure',
+    
+    /**
+     * Записывать видео при падении теста
+     * Варианты: 'off', 'on', 'retain-on-failure'
+     * Видео сохраняются в test-results/
+     */
     video: 'retain-on-failure'
   },
-
-  /* Configure projects for major browsers */
+  
+  // ==========================================================================
+  // БРАУЗЕРЫ ДЛЯ ТЕСТИРОВАНИЯ
+  // ==========================================================================
+  /**
+   * Проекты — это комбинации браузеров и устройств для тестирования
+   * Каждый проект запускается отдельно со всеми тестами
+   * @see https://playwright.dev/docs/test-projects
+   */
   projects: [
     {
+      /**
+       * Desktop Chrome
+       * Самый популярный браузер — тестируем в первую очередь
+       */
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
-
+    
     {
+      /**
+       * Mobile Chrome (эмуляция Pixel 5)
+       * Тестируем мобильную версию виджета
+       * @see https://playwright.dev/docs/emulation
+       */
       name: 'Mobile Chrome',
       use: { ...devices['Pixel 5'] },
     },
-
-    /* Test against branded browsers. */
-    // {
-    //   name: 'Microsoft Edge',
-    //   use: { ...devices['Desktop Edge'], channel: 'msedge' },
-    // },
-    // {
-    //   name: 'Google Chrome',
-    //   use: { ...devices['Desktop Chrome'], channel: 'chrome' },
-    // },
+    
+    // ========================================================================
+    // ДОПОЛНИТЕЛЬНЫЕ БРАУЗЕРЫ (закомментированы)
+    // ========================================================================
+    /**
+     * Можно раскомментировать для расширения покрытия:
+     * 
+     * Desktop Edge, Desktop Chrome (канареечный), Firefox, Safari, Mobile Safari
+     * 
+     * Пример:
+     * {
+     *   name: 'Microsoft Edge',
+     *   use: { ...devices['Desktop Edge'], channel: 'msedge' },
+     * },
+     * {
+     *   name: 'Google Chrome',
+     *   use: { ...devices['Desktop Chrome'], channel: 'chrome' },
+     * },
+     */
   ],
-
-  /* Run your local dev server before starting the tests */
-  // webServer: {
-  //   command: 'npm run start',
-  //   url: 'http://localhost:3000',
-  //   reuseExistingServer: !process.env.CI,
-  // },
+  
+  // ==========================================================================
+  // ЛОКАЛЬНЫЙ СЕРВЕР (не используется)
+  // ==========================================================================
+  /**
+   * Если нужно запускать локальный сервер перед тестами:
+   * 
+   * webServer: {
+   *   command: 'npm run start',
+   *   url: 'http://localhost:3000',
+   *   reuseExistingServer: !process.env.CI,
+   * },
+   * 
+   * Сейчас не используется — тестируем внешний сайт
+   */
 });
