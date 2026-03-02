@@ -200,11 +200,19 @@ async function performChatScenario(page) {
   await sendButton.click();
   
   // Ждём ответа от бота
-  // Ищем сообщения в чате — они появляются в #ws_msgcont
-  const botMessages = widgetFrame.locator('#ws_msgcont [class*="msg"], #ws_msgcont .message, #ws_msgcont > *');
+  // Структура сообщений:
+  // <div class="itm msg -guest">...</div> — сообщение пользователя
+  // <div class="itm msg -mngr">...</div> — сообщение бота (manager)
+  
+  // Ждём сообщение от бота (класс -mngr)
+  const botMessage = widgetFrame.locator('#ws_msgcont .itm.msg.-mngr');
   
   // Ждём хотя бы одно сообщение от бота
-  await expect(botMessages.first()).toBeVisible({ timeout: config.TIMEOUTS.AUTHORIZATION_FORM * 2 });
+  await expect(botMessage.first()).toBeVisible({ timeout: config.TIMEOUTS.AUTHORIZATION_FORM * 2 });
+  
+  // Дополнительно проверяем что в сообщении есть текст (в balloon элементе)
+  const botMessageText = botMessage.first().locator('.bal').first();
+  await expect(botMessageText).toBeVisible({ timeout: config.TIMEOUTS.AUTHORIZATION_FORM });
 }
 
 // =============================================================================
