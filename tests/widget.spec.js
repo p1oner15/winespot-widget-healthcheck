@@ -1,61 +1,63 @@
-const { test, expect } = require('@playwright/test');
+// @ts-check
+const { test, expect } = require('./fixtures');
+const config = require('./config');
+const {
+  validateWidget,
+  expectWidgetsVisible,
+  performTrackScenario,
+  getWidgetFrame
+} = require('./widget.helper');
 
-const partners = [
-  {
-    name: 'Scott Harvey Winery (staging)',
-    url: 'https://staging.getwinespot.com/scottharveywinery-staging/index.html'
-  },
-  {
-    name: 'Tank Garage Winery (staging)',
-    url: 'https://staging.getwinespot.com/tankgaragewinery-staging/index.html'
-  }
-];
+const partners = config.partners;
 
 partners.forEach((partner) => {
+  test.describe(`Partner: ${partner.name}`, () => {
+    test.describe.configure({ timeout: config.TEST_TIMEOUT });
 
-  test(`Widget health check on ${partner.name}`, async ({ page }) => {
-
-    await page.goto(partner.url, {
-      waitUntil: 'domcontentloaded',
-      timeout: 60000
+    test.beforeEach(async ({ page }) => {
+      await page.goto(partner.url, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60000
+      });
     });
 
-    // Ждём появления любого winespot iframe
-    await page.waitForSelector('#winespot', { timeout: 60000 });
+    test('должен отображать виджет корректно', async ({ page }) => {
+      await test.step('Load page', async () => {
+        // Страница уже загружена в beforeEach
+      });
 
-    const widgets = page.locator('#winespot');
-    const count = await widgets.count();
+      await test.step('Validate widget', async () => {
+        await expectWidgetsVisible(page);
 
-    expect(count).toBeGreaterThan(0);
+        // Дополнительная явная проверка position: fixed с понятным сообщением
+        const widget = page.locator(config.selectors.WIDGET).first();
+        const position = await widget.evaluate(el =>
+          window.getComputedStyle(el).position
+        );
+        expect(position, 'Widget lost fixed positioning').toBe('fixed');
+      });
+    });
 
-    let validWidgetFound = false;
+    test('должен открывать чат и переходить на форму авторизации по кнопке Track', async ({ page }) => {
+      await test.step('Load page', async () => {
+        // Страница уже загружена в beforeEach
+      });
 
-    for (let i = 0; i < count; i++) {
-      const widget = widgets.nth(i);
+      await test.step('Validate widget', async () => {
+        await expectWidgetsVisible(page);
+      });
 
-      if (await widget.isVisible()) {
+      await test.step('Open chat', async () => {
+        // performTrackScenario internally waits for chat to open
+      });
 
-        const box = await widget.boundingBox();
+      await test.step('Click Track', async () => {
+        // performTrackScenario internally clicks Track button
+      });
 
-        if (box && box.width > 30 && box.height > 30) {
-
-          const viewport = page.viewportSize();
-
-          if (
-            box.x >= 0 &&
-            box.y >= 0 &&
-            box.x + box.width <= viewport.width &&
-            box.y + box.height <= viewport.height
-          ) {
-            validWidgetFound = true;
-            break;
-          }
-        }
-      }
-    }
-
-    expect(validWidgetFound).toBeTruthy();
-
+      await test.step('Validate authorization screen', async () => {
+        await performTrackScenario(page);
+      });
+    });
   });
-
 });
