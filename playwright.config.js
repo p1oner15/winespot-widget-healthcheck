@@ -9,8 +9,8 @@ const testConfig = require('./tests/config');
  * @see https://playwright.dev/docs/test-configuration
  */
 export default defineConfig({
-  testDir: './',  // Тесты в той же папке что и конфиг
-  /* Run tests in files in parallel */
+  testDir: './',
+  testIgnore: ['**/debug-*.spec.js'],
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
@@ -63,4 +63,3 @@ export default defineConfig({
   //   reuseExistingServer: !process.env.CI,
   // },
 });
-
