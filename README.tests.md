@@ -41,20 +41,52 @@ npm run test:ui
 | `EXPECTED_IFRAME_COUNT` | Ожидаемое количество iframe | 2 |
 | `TEST_TIMEOUT` | Общий таймаут теста (мс) | 60000 |
 
+### Запуск для продакшена
+
+Для запуска тестов на продакшене используйте переменную окружения `PARTNERS`:
+
+```bash
+# Один партнёр
+PARTNERS='[{"name":"My Partner","url":"https://example.com/index.html"}]' npm test
+
+# Несколько партнёров
+PARTNERS='[{"name":"Partner 1","url":"https://example.com/p1"},{"name":"Partner 2","url":"https://example.com/p2"}]' npm test
+```
+
 ## Структура тестов
 
-- `tests/widget.spec.js` — основные тесты:
-  - Видимость виджета на странице
-  - Открытие чата и переход на форму авторизации
-- `tests/debug-chat.spec.js` — отладочные тесты для исследования структуры чата
+```
+tests/
+├── config.js              # Конфигурация: таймауты, селекторы, партнёры
+├── fixtures.js            # Фикстуры Playwright (скриншоты при падении)
+├── widget.helper.js       # Вспомогательные функции для тестов
+└── smoke/
+    └── widget.smoke.spec.js  # Smoke-тесты виджета
+```
+
+### Smoke-тесты
+
+Smoke-тесты проверяют базовую функциональность:
+
+1. **Виджет отображается корректно**
+   - Виджет найден в DOM (iframe #winespot)
+   - Виджет видим (display !== 'none')
+   - position: fixed
+   - Размеры больше минимальных (> 30px)
+   - Виджет в пределах viewport
+
+2. **Открытие чата и переход к авторизации**
+   - Чат открывается (клик по медальке или виджету)
+   - Кнопка "Track and manage my orders" работает
+   - Появляется форма авторизации с полем email
 
 ## Партнёры для тестирования
 
-Тесты запускаются для следующих партнёров:
+По умолчанию тесты запускаются для:
 - Scott Harvey Winery (staging)
 - Tank Garage Winery (staging)
 
-Для добавления нового партнёра отредактируйте `tests/config.js`.
+Для добавления нового партнёра отредактируйте `tests/config.js` или используйте `PARTNERS` ENV.
 
 ## CI/CD
 
@@ -68,5 +100,18 @@ npm run test:ui
 ## Результаты тестов
 
 - `test-results/` — детальные результаты (не коммитятся)
-- `playwright-report/` — HTML-отчёт (не коммитится)
-- `screenshots/` — скриншоты при падении тестов
+- `playwright-report/` — HTML-отчёт (не коммитится, открыть: `npx playwright show-report`)
+- `screenshots/` — скриншоты при падении тестов (не коммитятся)
+
+## Отладка
+
+Для отладки тестов создайте файл `tests/debug-*.spec.js` (игнорируется в CI):
+
+```javascript
+const { test, expect } = require('../fixtures');
+
+test('debug: мой тест', async ({ page }) => {
+  await page.goto('https://staging.getwinespot.com/...');
+  // ...
+});
+```
