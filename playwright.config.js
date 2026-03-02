@@ -9,7 +9,7 @@ const testConfig = require('./tests/config');
  * @see https://playwright.dev/docs/test-configuration
  */
 export default defineConfig({
-  testDir: './',
+  testDir: './tests',
   testIgnore: ['**/debug-*.spec.js'],
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */

@@ -9,34 +9,6 @@ const config = require('./config');
  */
 
 /**
- * Проверяет, что виджет находится в пределах viewport
- * @param {{ x: number, y: number, width: number, height: number }} box
- * @param {{ width: number, height: number }} viewport
- * @returns {{ isValid: boolean, error: string | null }}
- */
-function validateWidgetPosition(box, viewport) {
-  const errors = [];
-
-  if (box.x < 0) {
-    errors.push(`Widget is outside viewport on left by ${Math.abs(box.x)}px`);
-  }
-  if (box.y < 0) {
-    errors.push(`Widget is outside viewport on top by ${Math.abs(box.y)}px`);
-  }
-  if (box.x + box.width > viewport.width) {
-    errors.push(`Widget is outside viewport on right by ${box.x + box.width - viewport.width}px`);
-  }
-  if (box.y + box.height > viewport.height) {
-    errors.push(`Widget is outside viewport on bottom by ${box.y + box.height - viewport.height}px`);
-  }
-
-  return {
-    isValid: errors.length === 0,
-    error: errors.length > 0 ? errors.join('; ') : null
-  };
-}
-
-/**
  * Валидирует виджет: наличие iframe, стили, размеры, положение
  * @param {import('@playwright/test').Page} page
  * @param {number} index — индекс виджета
@@ -52,105 +24,71 @@ async function validateWidget(page, index = 0) {
   const widget = page.locator(config.selectors.WIDGET).nth(index);
 
   // Проверка: элемент существует и это iframe
-  try {
-    const tagName = await widget.evaluate(el => el.tagName, { timeout: config.TIMEOUTS.ELEMENT });
-    if (tagName !== 'IFRAME') {
-      const errorMsg = `Widget is not an iframe, found: ${tagName}`;
-      result.errors.push(errorMsg);
-      console.log(`[Widget Validation] ${errorMsg}`);
-      return result;
-    }
-  } catch (error) {
-    const errorMsg = 'Widget element not found in DOM';
-    result.errors.push(errorMsg);
-    console.log(`[Widget Validation] ${errorMsg}`);
+  const tagName = await widget.evaluate(el => el.tagName).catch(() => null);
+  if (!tagName) {
+    result.errors.push('Widget element not found in DOM');
+    return result;
+  }
+  if (tagName !== 'IFRAME') {
+    result.errors.push(`Widget is not an iframe, found: ${tagName}`);
     return result;
   }
 
   // Проверка: видимость через CSS-свойства
-  try {
-    const styles = await widget.evaluate(el => {
-      const computed = window.getComputedStyle(el);
-      return {
-        display: computed.display,
-        visibility: computed.visibility,
-        position: computed.position
-      };
-    });
+  const styles = await widget.evaluate(el => {
+    const computed = window.getComputedStyle(el);
+    return {
+      display: computed.display,
+      visibility: computed.visibility,
+      position: computed.position
+    };
+  }).catch(() => null);
 
-    if (styles.display === 'none') {
-      const errorMsg = 'Widget has display: none';
-      result.errors.push(errorMsg);
-      console.log(`[Widget Validation] ${errorMsg}`);
-    }
-    if (styles.visibility === 'hidden') {
-      const errorMsg = 'Widget has visibility: hidden';
-      result.errors.push(errorMsg);
-      console.log(`[Widget Validation] ${errorMsg}`);
-    }
-    if (styles.position !== 'fixed') {
-      const errorMsg = `Widget lost fixed positioning, found: ${styles.position}`;
-      result.errors.push(errorMsg);
-      console.log(`[Widget Validation] ${errorMsg}`);
-    }
-
-    if (result.errors.length > 0) {
-      return result;
-    }
-  } catch (error) {
-    const errorMsg = 'Failed to get widget styles';
-    result.errors.push(errorMsg);
-    console.log(`[Widget Validation] ${errorMsg}`);
+  if (!styles) {
+    result.errors.push('Failed to get widget styles');
+    return result;
+  }
+  if (styles.display === 'none') {
+    result.errors.push('Widget has display: none');
+    return result;
+  }
+  if (styles.visibility === 'hidden') {
+    result.errors.push('Widget has visibility: hidden');
+    return result;
+  }
+  if (styles.position !== 'fixed') {
+    result.errors.push(`Widget lost fixed positioning, found: ${styles.position}`);
     return result;
   }
 
   // Проверка: размеры
-  try {
-    const box = await widget.boundingBox();
-    if (!box) {
-      const errorMsg = 'Widget bounding box is null';
-      result.errors.push(errorMsg);
-      console.log(`[Widget Validation] ${errorMsg}`);
-      return result;
-    }
+  const box = await widget.boundingBox().catch(() => null);
+  if (!box) {
+    result.errors.push('Widget bounding box is null');
+    return result;
+  }
+  result.boundingBox = box;
 
-    result.boundingBox = box;
+  if (box.width <= config.MIN_WIDGET_SIZE) {
+    result.errors.push(`Widget width ${box.width}px is below minimal ${config.MIN_WIDGET_SIZE}px`);
+    return result;
+  }
+  if (box.height <= config.MIN_WIDGET_SIZE) {
+    result.errors.push(`Widget height ${box.height}px is below minimal ${config.MIN_WIDGET_SIZE}px`);
+    return result;
+  }
 
-    if (box.width <= config.MIN_WIDGET_SIZE) {
-      const errorMsg = `Widget size is below minimal threshold: width=${box.width}px (min: ${config.MIN_WIDGET_SIZE}px)`;
-      result.errors.push(errorMsg);
-      console.log(`[Widget Validation] ${errorMsg}`);
-    }
-    if (box.height <= config.MIN_WIDGET_SIZE) {
-      const errorMsg = `Widget size is below minimal threshold: height=${box.height}px (min: ${config.MIN_WIDGET_SIZE}px)`;
-      result.errors.push(errorMsg);
-      console.log(`[Widget Validation] ${errorMsg}`);
-    }
+  // Проверка: положение в viewport
+  const viewport = page.viewportSize();
+  if (!viewport) {
+    result.errors.push('Viewport size is null');
+    return result;
+  }
 
-    if (result.errors.length > 0) {
-      return result;
-    }
-
-    // Проверка: положение в viewport
-    const viewport = page.viewportSize();
-    if (!viewport) {
-      const errorMsg = 'Viewport size is null';
-      result.errors.push(errorMsg);
-      console.log(`[Widget Validation] ${errorMsg}`);
-      return result;
-    }
-
-    const positionValidation = validateWidgetPosition(box, viewport);
-    if (!positionValidation.isValid) {
-      const errorMsg = `Widget is outside viewport: ${positionValidation.error}`;
-      result.errors.push(errorMsg);
-      console.log(`[Widget Validation] ${errorMsg}`);
-      return result;
-    }
-  } catch (error) {
-    const errorMsg = 'Failed to get widget bounding box';
-    result.errors.push(errorMsg);
-    console.log(`[Widget Validation] ${errorMsg}`);
+  if (box.x < 0 || box.y < 0 ||
+      box.x + box.width > viewport.width ||
+      box.y + box.height > viewport.height) {
+    result.errors.push('Widget is outside viewport');
     return result;
   }
 
@@ -164,13 +102,11 @@ async function validateWidget(page, index = 0) {
  * @returns {Promise<import('@playwright/test').FrameLocator>}
  */
 async function getWidgetFrame(page) {
-  // Ждём появления iframe виджета
   await page.waitForSelector(config.selectors.WIDGET, {
     state: 'attached',
     timeout: config.TIMEOUTS.WIDGET
   });
 
-  // Используем frameLocator для стабильной работы с iframe
   return page.frameLocator(config.selectors.WIDGET);
 }
 
@@ -180,8 +116,6 @@ async function getWidgetFrame(page) {
  * @returns {Promise<void>}
  */
 async function waitForFrameContent(frameLocator) {
-  // Конвертируем FrameLocator в Locator для проверки body
-  // Используем locate() для получения элемента внутри iframe
   await frameLocator.locator('body').waitFor({
     state: 'attached',
     timeout: config.TIMEOUTS.FRAME_CONTENT
@@ -195,48 +129,17 @@ async function waitForFrameContent(frameLocator) {
  * @returns {Promise<void>}
  */
 async function openChatViaMedal(page, widgetFrame) {
-  const medalLocator = page.locator(config.selectors.MEDAL);
-
-  // Ждём появления медальки
-  await medalLocator.waitFor({ state: 'attached', timeout: config.TIMEOUTS.WIDGET });
-
-  // Получаем frameLocator для медальки
   const medalFrame = page.frameLocator(config.selectors.MEDAL);
 
   // Ждём загрузки содержимого iframe медальки
   await waitForFrameContent(medalFrame);
 
   // Кликаем по медальке для открытия чата
-  // Используем force: true чтобы избежать проверок видимости (медалька может быть под виджетом)
   await medalFrame.locator(config.selectors.MEDAL_FACE).click({ force: true });
 
-  // Ждём появления кнопки Track после открытия чата
-  // Кнопка может появиться с задержкой, используем polling
+  // Ждём появления кнопки Track
   const trackButton = widgetFrame.locator(config.selectors.TRACK_BUTTON).first();
-
-  // Пробуем дождаться кнопки с повторными попытками
-  const maxAttempts = 3;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      await trackButton.waitFor({ state: 'visible', timeout: config.TIMEOUTS.TRACK_BUTTON / maxAttempts });
-      
-      // Дополнительно проверяем текст кнопки (на случай если селектор нашёл не тот элемент)
-      const buttonText = await trackButton.textContent();
-      if (buttonText && buttonText.includes(config.selectors.TRACK_BUTTON_TEXT)) {
-        break; // Кнопка найдена и текст совпадает
-      }
-      // Если текст не совпадает — продолжаем ждать
-      if (attempt === maxAttempts) {
-        throw new Error(`Текст кнопки не совпадает: "${buttonText}" (ожидалось: "${config.selectors.TRACK_BUTTON_TEXT}")`);
-      }
-    } catch (error) {
-      if (attempt === maxAttempts) {
-        throw new Error(`Кнопка Track не появилась после ${maxAttempts} попыток: ${error.message}`);
-      }
-      // Кликаем ещё раз
-      await medalFrame.locator(config.selectors.MEDAL_FACE).click({ force: true });
-    }
-  }
+  await trackButton.waitFor({ state: 'visible', timeout: config.TIMEOUTS.TRACK_BUTTON });
 }
 
 /**
@@ -245,30 +148,17 @@ async function openChatViaMedal(page, widgetFrame) {
  * @returns {Promise<import('@playwright/test').FrameLocator>}
  */
 async function openChatAndClickTrack(page) {
-  // Получаем frameLocator виджета
   const widgetFrame = await getWidgetFrame(page);
-
-  // Ждём загрузки содержимого iframe
   await waitForFrameContent(widgetFrame);
 
-  // Находим кнопку Track по селектору
   const trackButton = widgetFrame.locator(config.selectors.TRACK_BUTTON).first();
 
-  // Проверяем, видима ли кнопка
+  // Проверяем видимость кнопки
   const isTrackVisible = await trackButton.isVisible().catch(() => false);
 
   // Если кнопка скрыта — открываем чат через медальку
   if (!isTrackVisible) {
     await openChatViaMedal(page, widgetFrame);
-  } else {
-    // Кнопка видима — ждём её готовности к клику и проверяем текст
-    await trackButton.waitFor({ state: 'visible', timeout: config.TIMEOUTS.TRACK_BUTTON });
-    
-    // Проверяем текст кнопки (для логирования и отладки)
-    const buttonText = await trackButton.textContent();
-    if (!buttonText || !buttonText.includes(config.selectors.TRACK_BUTTON_TEXT)) {
-      console.log(`[Warning] Текст кнопки Track: "${buttonText}" (ожидалось: "${config.selectors.TRACK_BUTTON_TEXT}")`);
-    }
   }
 
   // Кликаем на кнопку Track
@@ -299,69 +189,38 @@ async function performTrackScenario(page) {
 }
 
 /**
- * Ожидает, пока виджет станет видимым (display !== 'none')
- * @param {import('@playwright/test').Page} page
- * @returns {Promise<void>}
- */
-async function waitForWidgetVisible(page) {
-  // Ждём, пока виджет перестанет иметь display: none
-  await page.waitForFunction(
-    (selector) => {
-      const el = document.querySelector(selector);
-      if (!el) return false;
-      return window.getComputedStyle(el).display !== 'none';
-    },
-    config.selectors.WIDGET,
-    { timeout: config.TIMEOUTS.WIDGET }
-  );
-}
-
-/**
  * Проверяет наличие и валидность всех виджетов на странице
+ * Использует Playwright assertions для автоматического падения теста
  * @param {import('@playwright/test').Page} page
  * @returns {Promise<void>}
  */
 async function expectWidgetsVisible(page) {
-  // Ждём появления хотя бы одного виджета
-  await page.waitForSelector(config.selectors.WIDGET, {
-    state: 'attached',
-    timeout: config.TIMEOUTS.WIDGET
-  });
+  const { expect } = require('@playwright/test');
 
-  // Ждём, пока виджет станет видимым (display !== 'none')
-  await waitForWidgetVisible(page);
+  // Ждём появления виджета с проверкой видимости
+  const widgetLocator = page.locator(config.selectors.WIDGET);
+  
+  // Ожидаем хотя бы один виджет
+  await expect(widgetLocator).toHaveCount({ min: 1, max: config.EXPECTED_IFRAME_COUNT });
 
-  const widgets = page.locator(config.selectors.WIDGET);
-  const count = await widgets.count();
+  // Проверяем видимость первого виджета через Playwright assertion
+  await expect(widgetLocator.first()).toBeVisible({ timeout: config.TIMEOUTS.WIDGET });
 
-  // Ожидаем как минимум 1 виджет
-  expect(count).toBeGreaterThanOrEqual(1);
-  expect(count).toBeLessThanOrEqual(config.EXPECTED_IFRAME_COUNT);
+  // Проверяем position: fixed
+  const position = await widgetLocator.first().evaluate(el =>
+    window.getComputedStyle(el).position
+  );
+  expect(position, 'Widget lost fixed positioning').toBe('fixed');
 
-  // Проверяем, что хотя бы один виджет полностью валиден
-  let validWidgetFound = false;
-  const validationErrors = [];
-
-  for (let i = 0; i < count; i++) {
-    const result = await validateWidget(page, i);
-    if (result.isValid) {
-      validWidgetFound = true;
-      break;
-    }
-    validationErrors.push(...result.errors);
-  }
-
-  if (!validWidgetFound) {
-    throw new Error(`No valid widgets found. Errors: ${validationErrors.join('; ')}`);
+  // Проверяем валидность виджета
+  const result = await validateWidget(page, 0);
+  if (!result.isValid) {
+    throw new Error(`Widget validation failed: ${result.errors.join('; ')}`);
   }
 }
 
-// Для совместимости с expect из Playwright
-const { expect } = require('@playwright/test');
-
 module.exports = {
   validateWidget,
-  validateWidgetPosition,
   getWidgetFrame,
   waitForFrameContent,
   openChatViaMedal,
