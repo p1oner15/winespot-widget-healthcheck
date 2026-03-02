@@ -149,109 +149,87 @@ async function waitForFrameContent(frameLocator) {
 // ОТКРЫТИЕ ЧАТА ЧЕРЕЗ МЕДАЛЬКУ
 // =============================================================================
 
+// =============================================================================
+// ОТКРЫТИЕ ЧАТА ЧЕРЕЗ МЕДАЛЬКУ
+// =============================================================================
+
 /**
- * Открывает чат через медальку, если кнопка Track не видима
+ * Открывает чат кликом по медальке
  *
  * Медалька — это маленький iframe (#wsf_medal), который появляется поверх виджета
  * и позволяет открыть чат кликом по иконке
  *
  * @param {import('@playwright/test').Page} page - Страница Playwright
- * @param {import('@playwright/test').FrameLocator} widgetFrame - FrameLocator основного виджета
- * @returns {Promise<void>}
+ * @returns {Promise<import('@playwright/test').FrameLocator>} FrameLocator виджета после открытия чата
  */
-async function openChatViaMedal(page, widgetFrame) {
-  try {
-    // Получаем frameLocator для медальки
-    const medalFrame = page.frameLocator(config.selectors.MEDAL);
-
-    // Ждём загрузки содержимого iframe медальки
-    await waitForFrameContent(medalFrame);
-
-    // Кликаем по медальке для открытия чата
-    // force: true — кликаем без проверки видимости (медалька может быть под виджетом)
-    await medalFrame.locator(config.selectors.MEDAL_FACE).click({ force: true });
-
-    // Ждём появления кнопки Track после открытия чата
-    // Увеличиваем таймаут т.к. чат может открываться с задержкой
-    const trackButton = widgetFrame.locator(config.selectors.TRACK_BUTTON).first();
-    await trackButton.waitFor({ state: 'visible', timeout: config.TIMEOUTS.TRACK_BUTTON * 2 });
-  } catch (error) {
-    // Если медалька не сработала — это не критично, кнопка может быть видима сразу
-    console.log('Medal click failed, track button may be visible already');
-  }
-}
-
-// =============================================================================
-// ОТКРЫТИЕ ЧАТА И КЛИК ПО КНОПКЕ TRACK
-// =============================================================================
-
-/**
- * Открывает чат и нажимает кнопку "Track and manage my orders"
- *
- * Стратегия:
- * 1. Проверяем, видима ли кнопка Track сразу
- * 2. Если нет — пробуем кликнуть по медальке
- * 3. Если кнопка всё ещё скрыта — пробуем кликнуть напрямую (вдруг сработает)
- *
- * @param {import('@playwright/test').Page} page - Страница Playwright
- * @returns {Promise<import('@playwright/test').FrameLocator>} FrameLocator виджета после клика
- */
-async function openChatAndClickTrack(page) {
-  // Получаем frameLocator виджета
+async function openChatViaMedal(page) {
+  // Получаем frameLocator для виджета
   const widgetFrame = await getWidgetFrame(page);
-
-  // Ждём загрузки содержимого iframe
+  
+  // Ждём загрузки содержимого iframe виджета
   await waitForFrameContent(widgetFrame);
 
-  // Находим кнопку Track по селектору
-  const trackButton = widgetFrame.locator(config.selectors.TRACK_BUTTON).first();
+  // Получаем frameLocator для медальки
+  const medalFrame = page.frameLocator(config.selectors.MEDAL);
 
-  // Проверяем видимость кнопки
-  const isTrackVisible = await trackButton.isVisible().catch(() => false);
+  // Ждём загрузки содержимого iframe медальки
+  await waitForFrameContent(medalFrame);
 
-  // Если кнопка скрыта — пробуем открыть чат через медальку
-  if (!isTrackVisible) {
-    await openChatViaMedal(page, widgetFrame);
-  }
+  // Кликаем по медальке для открытия чата
+  // force: true — кликаем без проверки видимости (медалька может быть под виджетом)
+  await medalFrame.locator(config.selectors.MEDAL_FACE).click({ force: true });
 
-  // Пробуем кликнуть на кнопку Track (даже если она скрыта — force может помочь)
-  await trackButton.click({ force: true });
+  // Ждём появления поля ввода сообщения (чат открыт)
+  // Ищем любое текстовое поле внутри виджета
+  const messageInput = widgetFrame.locator('input[type="text"], textarea, [contenteditable="true"]').first();
+  await messageInput.waitFor({ state: 'visible', timeout: config.TIMEOUTS.TRACK_BUTTON * 2 });
 
   return widgetFrame;
 }
 
 // =============================================================================
-// ОЖИДАНИЕ ФОРМЫ АВТОРИЗАЦИИ
+// ОТПРАВКА СООБЩЕНИЯ В ЧАТ
 // =============================================================================
 
 /**
- * Ожидает появления формы авторизации после клика на Track
- * 
- * После клика на Track виджет должен показать форму входа с полем email
- * 
+ * Отправляет сообщение в чат и ждёт ответа
+ *
  * @param {import('@playwright/test').FrameLocator} widgetFrame - FrameLocator виджета
+ * @param {string} message - Текст сообщения для отправки
  * @returns {Promise<void>}
  */
-async function waitForAuthorizationForm(widgetFrame) {
-  // Ждём появления поля email (форма авторизации)
-  // name поля содержит placeholder "johndoe@email.com"
-  const emailField = widgetFrame.getByRole('textbox', { name: config.selectors.EMAIL_FIELD_NAME });
-  await emailField.waitFor({ state: 'visible', timeout: config.TIMEOUTS.AUTHORIZATION_FORM });
+async function sendMessageAndWaitForReply(widgetFrame, message = 'hello') {
+  // Находим поле ввода сообщения
+  const messageInput = widgetFrame.locator('input[type="text"], textarea').first();
+  
+  // Вводим сообщение
+  await messageInput.fill(message);
+  
+  // Находим кнопку отправки (обычно button с иконкой отправки или текстом)
+  const sendButton = widgetFrame.locator('button[type="submit"], button.send, [class*="send"]').first();
+  
+  // Кликаем отправить
+  await sendButton.click();
+  
+  // Ждём ответа от бота
+  // Ищем любое сообщение в чате (обычно div с классом message, bot, reply)
+  const botMessage = widgetFrame.locator('[class*="message"], [class*="bot"], [class*="reply"], .chat-message').first();
+  await botMessage.waitFor({ state: 'visible', timeout: config.TIMEOUTS.AUTHORIZATION_FORM * 2 });
 }
 
 // =============================================================================
-// E2E СЦЕНАРИЙ: ПОЛНЫЙ ТЕСТ
+// E2E СЦЕНАРИЙ: ОТКРЫТИЕ ЧАТА И ОТПРАВКА СООБЩЕНИЯ
 // =============================================================================
 
 /**
- * Полный e2e сценарий: открытие чата, клик Track, ожидание формы авторизации
- * 
+ * Полный e2e сценарий: открытие чата через медальку, отправка "hello", проверка ответа
+ *
  * @param {import('@playwright/test').Page} page - Страница Playwright
  * @returns {Promise<void>}
  */
-async function performTrackScenario(page) {
-  const widgetFrame = await openChatAndClickTrack(page);
-  await waitForAuthorizationForm(widgetFrame);
+async function performChatScenario(page) {
+  const widgetFrame = await openChatViaMedal(page);
+  await sendMessageAndWaitForReply(widgetFrame, 'hello');
 }
 
 // =============================================================================
@@ -307,8 +285,7 @@ module.exports = {
   getWidgetFrame,
   waitForFrameContent,
   openChatViaMedal,
-  openChatAndClickTrack,
-  waitForAuthorizationForm,
-  performTrackScenario,
+  sendMessageAndWaitForReply,
+  performChatScenario,
   expectWidgetsVisible
 };
