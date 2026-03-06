@@ -14,23 +14,49 @@ npm install
 npx playwright install
 ```
 
+### Установка браузеров
+
+**Windows/Linux:**
+```bash
+# Установить Chrome и Edge
+npx playwright install chrome msedge
+```
+
+**macOS:**
+```bash
+# Установить все браузеры (включая Safari)
+npx playwright install
+```
+
 ## Запуск тестов
 
 ```bash
-# Все тесты (Chromium + Mobile Chrome)
+# Все тесты (Chrome + Edge + Safari + Mobile)
 npm test
 
 # Тесты в определённом браузере
-npx playwright test --project=chromium
-npx playwright test --project="Mobile Chrome"
+npx playwright test --project=Chrome
+npx playwright test --project=Edge
+npx playwright test --project=Safari
+npx playwright test --project='Mobile Safari'
+npx playwright test --project='Mobile Chrome'
 
-# Тесты в режиме браузера (headed)
+# Несколько браузеров одновременно
+npx playwright test --project=Chrome --project=Edge
+
+# Только проверка наличия виджета (быстрый запуск)
+npx playwright test --grep "presence"
+
+# Только E2E тесты чата
+npx playwright test --grep "hello"
+
+# В режиме браузера (headed, не headless)
 npm run test:headed
 
-# Тесты в режиме отладки
+# В режиме отладки
 npm run test:debug
 
-# Тесты с UI
+# С UI для просмотра
 npm run test:ui
 ```
 
@@ -105,24 +131,42 @@ env:
 
 ```
 tests/
-├── config.js          # Конфигурация: таймауты, селекторы, партнёры
-├── fixtures.js        # Фикстуры Playwright для тестов
-├── widget.helper.js   # Helper: валидация виджета, работа с iframe, e2e-сценарии
-└── widget.spec.js     # Спецификации тестов
+├── config.js             # Конфигурация: таймауты, селекторы, партнёры
+├── fixtures.js           # Фикстуры Playwright для тестов
+├── widget.helper.js      # Helper: валидация виджета, работа с iframe, e2e-сценарии
+└── smoke/
+    ├── widget.smoke.spec.js      # E2E тесты: чат + ответ бота
+    └── widget-presence.spec.js   # Быстрая проверка наличия виджета
+```
+
+### Типы тестов
+
+| Файл | Описание | Время запуска | Когда использовать |
+|------|----------|---------------|---------------------|
+| `widget.smoke.spec.js` | Полноценный E2E: виджет → чат → ответ бота | ~15-20 сек | Основной сценарий, CI/CD |
+| `widget-presence.spec.js` | Быстрая проверка наличия виджета | ~5-7 сек | Быстрая проверка, ручные запуски |
+
+### Запуск отдельных типов тестов
+
+```bash
+# Только E2E тесты (чат + ответ бота)
+npx playwright test --grep "hello"
+
+# Только проверка наличия виджета
+npx playwright test --grep "presence"
+
+# Все тесты
+npx playwright test
 ```
 
 ### Helper-функции (`tests/widget.helper.js`)
 
 | Функция | Описание |
 |---------|----------|
-| `validateWidget(page, index)` | Полная валидация виджета: стили, размеры, положение. **Логирует каждую ошибку** |
-| `expectWidgetsVisible(page)` | Ожидание и проверка видимости виджетов |
-| `getWidgetFrame(page)` | Получение `FrameLocator` для iframe виджета |
-| `performTrackScenario(page)` | E2e-сценарий: открытие чата → клик Track → форма авторизации |
-
-### Фикстуры (`tests/fixtures.js`)
-
-Централизованная обработка ошибок и скриншотов. Playwright автоматически делает скриншоты при падении тестов (настроено в `playwright.config.js`).
+| `expectWidgetsVisible(page)` | Проверка видимости виджета: наличие iframe, стили, размеры, положение в viewport |
+| `validateWidget(page, index)` | Полная валидация виджета с детальными ошибками |
+| `getWidgetFrame(page)` | Получение `FrameLocator` для работы с содержимым iframe виджета |
+| `performChatScenario(page)` | E2E сценарий: открытие чата → отправка "hello" → ожидание ответа бота |
 
 ## Партнёры для тестирования
 
@@ -134,46 +178,100 @@ tests/
 
 ## Браузеры
 
-Тесты запускаются в:
-- **Chromium Desktop** — основная конфигурация
-- **Mobile Chrome (Pixel 5)** — мобильная версия
+### Основные браузеры для аудитории 45-50+ в Северной Америке
 
-## CI/CD
+| Браузер | Доля рынка | Платформы | Локально | GitHub Actions |
+|---------|------------|-----------|----------|----------------|
+| **Chrome** | ~55-60% | Windows, macOS, Linux | ✅ Да | ✅ Да |
+| **Safari** | ~25-30% | macOS, iOS | ✅ Только macOS | ✅ Да (macOS-раннер) |
+| **Edge** | ~10-15% | Windows, macOS, Linux | ✅ Да | ✅ Да |
+| **Mobile Safari** | ~15-20% | iOS (iPhone, iPad) | ✅ Эмуляция | ✅ Да (macOS-раннер) |
+| **Mobile Chrome** | ~10-15% | Android, iOS | ✅ Да | ✅ Да |
 
-Тесты запускаются автоматически через GitHub Actions при:
-- Push в ветки `main` / `master`
-- Pull Request
-- Ручном запуске через `workflow_dispatch`
+> **Примечание:** Мобильные браузеры важны для аудитории 45-50+ — это растущий сегмент (~30-35% используют мобильные устройства как основные).
 
-### Запуск в GitHub Actions
+---
 
-#### 1. Автоматический запуск (при push/PR)
+## 🖥️ Локальный запуск
 
-Тесты запускаются автоматически для всех партнёров из `tests/config.js`.
+### Windows/Linux
 
-#### 2. Ручной запуск с кастомными партнёрами
+```bash
+# Установить браузеры
+npx playwright install chrome msedge
 
-1. Перейдите в **Actions** → **Widget Visibility Tests**
-2. Нажмите **Run workflow**
-3. В поле **Partners** укажите JSON-массив:
+# Запустить все доступные тесты (Chrome + Edge + Mobile Chrome)
+npm test
 
-```json
-[{"name":"Partner 1","url":"https://partner1.com"},{"name":"Partner 2","url":"https://partner2.com"}]
+# Запустить в конкретном браузере
+npx playwright test --project=Chrome
+npx playwright test --project=Edge
+npx playwright test --project='Mobile Chrome'
+
+# Запустить несколько браузеров
+npx playwright test --project=Chrome --project=Edge
 ```
 
-4. Нажмите **Run workflow**
+### macOS
 
-#### 3. Запуск с конкретным браузером
+```bash
+# Установить все браузеры (включая Safari)
+npx playwright install
 
-Workflow запускает тесты параллельно в:
-- `chromium` — Desktop Chrome
-- `Mobile Chrome` — Pixel 5
+# Запустить все тесты (Chrome + Edge + Safari + Mobile Safari + Mobile Chrome)
+npm test
 
-Отчёты загружаются как артефакты: `playwright-report-chromium`, `playwright-report-Mobile Chrome`.
+# Запустить в конкретном браузере
+npx playwright test --project=Chrome
+npx playwright test --project=Edge
+npx playwright test --project=Safari
+npx playwright test --project='Mobile Safari'
+npx playwright test --project='Mobile Chrome'
+```
 
-### Добавление новых партнёров
+> **Примечание:** На Windows/Linux проекты Safari и Mobile Safari будут падать с ошибкой — это нормально. Используйте GitHub Actions для тестирования Safari.
 
-#### Вариант 1: В коде (по умолчанию)
+---
+
+## ☁️ GitHub Actions (CI/CD)
+
+В CI/CD запускаются **все 5 браузеров** параллельно:
+
+| Job | Раннер | Браузеры | Время |
+|-----|--------|----------|-------|
+| `test-chromium` | Ubuntu | Chrome, Edge | ~10 мин |
+| `test-safari` | macOS | Safari, Mobile Safari | ~10-15 мин |
+| `test-mobile-chrome` | Ubuntu | Mobile Chrome | ~5-10 мин |
+
+### Автоматический запуск
+
+Тесты запускаются автоматически при:
+- Push в `main` / `master`
+- Pull Request
+
+### Ручной запуск
+
+1. **Actions** → **Widget Visibility Tests** → **Run workflow**
+2. (Опционально) Укажите партнёров в поле **Partners**:
+   ```json
+   [{"name":"Partner 1","url":"https://partner1.com"}]
+   ```
+3. **Run workflow**
+
+### Лимиты GitHub Actions
+
+| Тип репозитория | Минут в месяц |
+|-----------------|---------------|
+| Публичный | ∞ Безлимитно |
+| Приватный | 500 минут |
+
+Один полный прогон (все браузеры) занимает ~25-35 минут.
+
+---
+
+## Добавление новых партнёров
+
+### Вариант 1: В коде (по умолчанию)
 
 Отредактируйте `DEFAULT_PARTNERS` в `tests/config.js`:
 
