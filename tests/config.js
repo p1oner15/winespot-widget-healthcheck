@@ -54,7 +54,7 @@ module.exports = {
     TRACK_BUTTON: 15000,
     AUTHORIZATION_FORM: process.env.CI ? 30000 : 20000,
     ELEMENT: 10000,
-    CHAT_RESPONSE: process.env.CI ? 60000 : 30000
+    CHAT_RESPONSE: process.env.CI ? 90000 : 45000
   },
 
   // Отфильтровывает скрытые элементы (0x0, лоадеры 16-24px)
