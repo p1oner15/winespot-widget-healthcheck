@@ -10,9 +10,11 @@ partners.forEach((partner) => {
     test.describe.configure({ timeout: config.TEST_TIMEOUT });
 
     test.beforeEach(async ({ page }) => {
+      // Увеличенный таймаут для мобильных устройств и медленных соединений
+      const gotoTimeout = config.TIMEOUTS.WIDGET;
       await page.goto(partner.url, {
         waitUntil: 'domcontentloaded',
-        timeout: 60000
+        timeout: gotoTimeout
       });
     });
 
