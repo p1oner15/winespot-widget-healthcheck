@@ -12,17 +12,31 @@ on:
         required: false
         type: string
         default: ''
+  schedule:
+    # Каждый день в 7:00 AM по Калифорнии (PST/PDT)
+    # 15:00 UTC = 7-8 AM в Калифорнии круглый год
+    - cron: '0 15 * * *'
 
 jobs:
-  # Chrome + Edge на Ubuntu
-  test-chromium:
-    runs-on: ubuntu-latest
+  # Все браузеры на Linux self-hosted
+  test-all-browsers:
+    runs-on: self-hosted
     timeout-minutes: 30
 
     strategy:
       fail-fast: false
       matrix:
-        project: [Chrome, Edge]
+        # Доступные браузеры на Linux:
+        # - Chrome, Edge (на базе Chromium)
+        # - Firefox
+        # - Mobile Chrome (эмуляция Pixel)
+        # - Mobile Safari (эмуляция iPhone через WebKit)
+        project:
+          - Chrome
+          - Edge
+          - Firefox
+          - Mobile Chrome
+          - Mobile Safari
 
     env:
       CI: true
@@ -45,134 +59,67 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-playwright-
 
+    - name: Cache node_modules
+      uses: actions/cache@v4
+      with:
+        path: node_modules
+        key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-node-
+
     - name: Install dependencies
       run: npm ci
 
     - name: Install Playwright browsers
-      run: npx playwright install --with-deps chrome msedge
+      run: npx playwright install --with-deps chrome msedge firefox webkit
 
     - name: Run tests
-      run: npx playwright test --project=${{ matrix.project }}
+      run: npx playwright test --project="${{ matrix.project }}"
 
+    # ✅ HTML-отчет — всегда (для просмотра статистики)
     - name: Upload HTML report
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: playwright-report-${{ matrix.project }}
         path: playwright-report/
-        retention-days: 7
+        retention-days: 30
 
-    - name: Upload test results
+    # ✅ Скриншоты и видео — при падении
+    - name: Upload screenshots
       if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: test-results-${{ matrix.project }}
+        name: screenshots-${{ matrix.project }}
         path: test-results/
-        retention-days: 7
+        retention-days: 30
 
-  # Safari + Mobile Safari на macOS
-  test-safari:
-    runs-on: macos-latest
-    timeout-minutes: 30
+    - name: Upload videos
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: videos-${{ matrix.project }}
+        path: test-results/**/*video*.webm
+        retention-days: 30
 
-    strategy:
-      fail-fast: false
-      matrix:
-        project: [Safari, 'Mobile Safari']
-
-    env:
-      CI: true
-      PARTNERS: ${{ github.event.inputs.partners != '' && github.event.inputs.partners || '' }}
-
+  # 🔔 Уведомление при падении
+  notify-on-failure:
+    runs-on: self-hosted
+    needs: [test-all-browsers]
+    if: failure()
     steps:
-    - uses: actions/checkout@v4
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-
-    - name: Cache Playwright browsers
-      uses: actions/cache@v4
-      with:
-        path: ~/Library/Caches/ms-playwright
-        key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
-        restore-keys: |
-          ${{ runner.os }}-playwright-
-
-    - name: Install dependencies
-      run: npm ci
-
-    - name: Install Playwright browsers
-      run: npx playwright install --with-deps safari
-
-    - name: Run Safari tests
-      run: npx playwright test --project=${{ matrix.project }}
-
-    - name: Upload HTML report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: playwright-report-${{ matrix.project }}
-        path: playwright-report/
-        retention-days: 7
-
-    - name: Upload test results
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-results-${{ matrix.project }}
-        path: test-results/
-        retention-days: 7
-
-  # Mobile Chrome на Ubuntu
-  test-mobile-chrome:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    env:
-      CI: true
-      PARTNERS: ${{ github.event.inputs.partners != '' && github.event.inputs.partners || '' }}
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-
-    - name: Cache Playwright browsers
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/ms-playwright
-        key: ${{ runner.os }}-playwright-mobile-${{ hashFiles('package-lock.json') }}
-        restore-keys: |
-          ${{ runner.os }}-playwright-mobile-
-
-    - name: Install dependencies
-      run: npm ci
-
-    - name: Install Playwright browsers
-      run: npx playwright install --with-deps chromium
-
-    - name: Run Mobile Chrome tests
-      run: npx playwright test --project='Mobile Chrome'
-
-    - name: Upload HTML report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: playwright-report-Mobile-Chrome
-        path: playwright-report/
-        retention-days: 7
-
-    - name: Upload test results
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-results-Mobile-Chrome
-        path: test-results/
-        retention-days: 7
+    - name: Notify failure
+      run: |
+        echo ""
+        echo "❌ Тесты упали!"
+        echo ""
+        echo "📎 Проверьте артефакты в этом запуске:"
+        echo "   • HTML-отчет (playwright-report-*) — откройте index.html в браузере"
+        echo "   • Скриншоты (screenshots-*) — PNG-файлы с момента падения"
+        echo "   • Видео (videos-*) — запись всего теста"
+        echo ""
+        echo "🔍 Как посмотреть:"
+        echo "   1. Откройте вкладку 'Artifacts' внизу страницы запуска"
+        echo "   2. Скачайте нужный архив"
+        echo "   3. Для HTML-отчета: распакуйте и откройте index.html"
+        echo ""

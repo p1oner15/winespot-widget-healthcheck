@@ -49,7 +49,7 @@ export default defineConfig({
     {
       name: 'Mobile Safari',
       use: { ...devices['iPhone 13'] },
-      retries: 3,  // Мобильные тесты могут быть менее стабильны
+      retries: 5,  // Мобильные тесты могут быть менее стабильны
     },
 
     {

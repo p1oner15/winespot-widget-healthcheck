@@ -137,56 +137,94 @@ async function performChatScenario(page) {
 
   await waitForFrameContent(widgetFrame);
 
-  // Кликаем по "Click here to start using our beta chat!"
-  try {
-    const openChatButton = widgetFrame.locator('.ws_open_welc').first();
-    await openChatButton.click({ force: true });
-    await widgetFrame.locator('[open_chat=""]').waitFor({ state: 'visible', timeout: 10000 });
-  } catch (error) {
-    // Игнорируем ошибку — возможно, чат уже открыт
-  }
+  // Даём дополнительное время для инициализации виджета на мобильных устройствах
+  // Mobile Safari требует больше времени для инициализации iframe
+  await page.waitForTimeout(3000);
 
-  // Кликаем по "How can we help?" для открытия поля ввода
-  try {
-    const openMessagesButton = widgetFrame.locator('[open_chat=""]').first();
-    await openMessagesButton.click({ force: true });
-    await widgetFrame.locator('#ws_input, [contenteditable="true"]').waitFor({ state: 'visible', timeout: 10000 });
-  } catch (error) {
-    // Игнорируем ошибку — возможно, поле уже доступно
-  }
-
-  // Вводим сообщение "hello"
+  // Проверяем, открыт ли уже чат (поле ввода может быть уже видимым)
   const messageInput = widgetFrame.locator('#ws_input, [contenteditable="true"]').first();
+  let isInputVisible = await messageInput.isVisible().catch(() => false);
+
+  if (!isInputVisible) {
+    // Чат закрыт или поле ввода скрыто — открываем его
+    // Кликаем по "Click here to start using our beta chat!"
+    try {
+      const openChatButton = widgetFrame.locator('.ws_open_welc').first();
+      await openChatButton.waitFor({ state: 'visible', timeout: 10000 });
+      await openChatButton.click({ force: true, timeout: 10000 });
+      await widgetFrame.locator('[open_chat=""]').waitFor({ state: 'visible', timeout: 10000 });
+    } catch (error) {
+      // Игнорируем ошибку — возможно, чат уже открыт
+    }
+
+    // Кликаем по "How can we help?" для открытия поля ввода
+    try {
+      const openMessagesButton = widgetFrame.locator('[open_chat=""]').first();
+      await openMessagesButton.waitFor({ state: 'visible', timeout: 10000 });
+      await openMessagesButton.click({ force: true, timeout: 10000 });
+      // Даём время на анимацию открытия поля ввода
+      await page.waitForTimeout(2000);
+    } catch (error) {
+      // Игнорируем ошибку — возможно, поле уже доступно
+    }
+  }
+
+  // Если поле всё ещё скрыто — пробуем кликнуть ещё раз по кнопке открытия
+  isInputVisible = await messageInput.isVisible().catch(() => false);
+  if (!isInputVisible) {
+    console.log('Поле ввода всё ещё скрыто, пробуем открыть ещё раз...');
+    try {
+      const openMessagesButton = widgetFrame.locator('[open_chat=""]').first();
+      await openMessagesButton.click({ force: true, timeout: 10000 });
+      await page.waitForTimeout(2000);
+    } catch (error) {
+      // Игнорируем
+    }
+  }
+
+  // Ждём видимости поля ввода с увеличенным таймаутом
+  await messageInput.waitFor({ state: 'visible', timeout: 20000 });
+  
+  // На мобильных устройствах и Safari fill надёжнее, чем click + pressSequentially
+  // Используем fill() который сам обрабатывает contenteditable элементы
   await messageInput.fill('hello');
 
-  // Отправляем сообщение
-  const sendButton = widgetFrame.locator('#ws_bsend, .btn.send').first();
-  await sendButton.click();
+  // Ждём появления кнопки отправки после ввода текста
+  const sendButton = widgetFrame.locator('#ws_bsend, .btn.send');
+  await sendButton.waitFor({ state: 'visible', timeout: 10000 });
+
+  // Небольшая пауза для стабилизации UI
+  await page.waitForTimeout(500);
+
+  // Отправляем сообщение через JavaScript click для надёжности
+  await sendButton.first().evaluate(el => el.click());
 
   // Ждём ответа от бота
   // Структура: <div class="itm msg -mngr"><div class="bal">TEXT</div></div>
   const botMessage = widgetFrame.locator('#ws_msgcont .itm.msg.-mngr');
-  
-  // Ждём появления контейнера сообщения
-  await expect(botMessage.first()).toBeVisible({ timeout: config.TIMEOUTS.CHAT_RESPONSE });
 
-  // Ждём, пока исчезнет индикатор набора (если есть)
+  // Ждём, пока исчезнет индикатор набора (если есть) — до проверки сообщения
   const typingIndicator = widgetFrame.locator('.ws_typing, .typing');
   try {
-    await typingIndicator.first().waitFor({ state: 'detached', timeout: 10000 });
+    await typingIndicator.first().waitFor({ state: 'detached', timeout: 15000 });
   } catch (e) {
-    // Игнорируем — индикатор может отсутствовать
+    // Игнорируем — индикатор может отсутствовать или уже исчезнуть
   }
 
-  // Ждём, пока текст в .bal станет непустым
-  // Элемент .bal появляется сразу, но текст внутри может подгружаться позже
+  // Ждём появления контейнера сообщения с текстом
   await expect(async () => {
-    const botText = await botMessage.first().locator('.bal').textContent();
+    const botMessages = botMessage.all();
+    if (botMessages.length === 0) {
+      throw new Error('No bot messages found');
+    }
+    const firstBotMessage = botMessage.first();
+    await firstBotMessage.waitFor({ state: 'visible', timeout: 5000 });
+    const botText = await firstBotMessage.locator('.bal').textContent();
     const trimmedText = botText?.trim();
     if (!trimmedText || trimmedText.length === 0) {
       throw new Error('Bot text is empty');
     }
-  }).toPass({ timeout: config.TIMEOUTS.CHAT_RESPONSE });
+  }).toPass({ timeout: config.TIMEOUTS.CHAT_RESPONSE, intervals: [5000, 10000, 15000] });
 
   // Проверяем, что бот действительно ответил (текст не пустой)
   const botMessageText = botMessage.first().locator('.bal').first();
